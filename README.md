@@ -2,25 +2,28 @@
 
 mailboxd adds an **Email** tab after **Friends**, **You**, and **Incoming** in your signed-in Letterboxd Activity feed. It brings together Letterboxd emails already in Apple Mail, newest first. Comment notifications show an excerpt and a **View and Reply** link to the original comment when available. Other entries link to their original messages in Apple Mail.
 
-## Build and use on your Mac
+## Install and update
 
-Requires macOS 14 or later, Safari 17 or later, the Xcode Command Line Tools, and an email account already configured in Apple Mail.
+Requires macOS 14 or later, Safari 17 or later, and an account configured in Apple Mail.
+
+1. Unzip the build and move `mailboxd.app` into **Applications** before opening it. On updates, quit mailboxd and replace the app at the same path. If you already installed it in `~/Applications`, use that location instead.
+2. Open that installed copy once. Click **Start Syncing** and approve access to Apple Mail when macOS prompts. Select **Open at login** if you want syncing to start whenever you sign in to your Mac.
+3. In **Safari → Settings → Extensions**, enable **mailboxd** and grant access to **letterboxd.com**. For an ad hoc build, first turn on **Allow unsigned extensions** in the Developer tab. Safari resets that setting on quit. [Running your Safari web extension](https://developer.apple.com/documentation/safariservices/running-your-safari-web-extension)
+4. Open [Letterboxd Activity](https://letterboxd.com/activity/) while signed in and select **Email**. The companion syncs every five minutes while running. **Sync Now** scans Apple Mail immediately, and the Email tab’s **Refresh** button reads the latest scan.
+
+The companion app contains the Safari extension and provides its native connection to the local feed. If Safari lists mailboxd more than once, quit Safari and mailboxd, then remove the extra app copies from locations such as Downloads, Applications, and your build folder. Use the installed copy when you reopen mailboxd. To locate installed plug-ins, run `pluginkit -m -A -D -vv -i com.mailboxd.local.extension`.
+
+## Build from source
+
+Install the Xcode Command Line Tools. Build in a local staging directory to avoid Finder metadata from cloud sync, then install the resulting app at your existing Applications path.
 
 ```sh
 git clone https://github.com/d1sp0ss3ss3d/mailboxd.git
 cd mailboxd
-./scripts/build.sh "$HOME/Applications"
-open "$HOME/Applications/mailboxd.app"
+./scripts/build.sh "$(mktemp -d)"
 ```
 
-1. In the mailboxd app, click **Start Syncing** and allow mailboxd to control **Mail** when macOS prompts you. The first scan can take a while on a large mailbox. Keep mailboxd running for automatic sync every five minutes. **Sync Now** requests an immediate scan.
-2. Enable the Safari development features in **Safari → Settings → Advanced** if the Developer tab is hidden. In **Settings → Developer**, select **Allow unsigned extensions** for this local development build.
-3. In **Safari → Settings → Extensions**, enable **mailboxd** and allow it to run on **letterboxd.com** when prompted. If you quit Safari, the unsigned extensions setting resets. Enable it again when you next use mailboxd.
-4. Open [Letterboxd Activity](https://letterboxd.com/activity/) while signed in, reload the page if it was already open, and select **Email**. The **Refresh** button reads the latest local feed. If Apple Mail has just downloaded a new message, you can use **Sync Now** in the Mac app first.
-
-This is a local development build for Safari on macOS. The Safari extension is embedded in the app so native messaging can work. Apple documents the steps for running development builds. [Running your Safari web extension](https://developer.apple.com/documentation/safariservices/running-your-safari-web-extension)
-
-Build or unzip the app into a local folder such as `~/Applications`. Cloud-synced folders can add Finder metadata that interferes with macOS signature verification.
+The default build is ad hoc signed. For a local developer-signed build, set `MAILBOXD_SIGN_IDENTITY` to the certificate name or SHA-1 shown by `security find-identity -v -p codesigning`. Public distribution outside the Mac App Store requires a Developer ID signature and notarization. [Distributing your Safari web extension](https://developer.apple.com/documentation/safariservices/distributing-your-safari-web-extension)
 
 ## Email access
 

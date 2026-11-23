@@ -19,6 +19,8 @@ cp -R "$root/extension/." "$extension/Resources/"
 
 target="$(uname -m)-apple-macos14.0"
 export CLANG_MODULE_CACHE_PATH="$out/ModuleCache.noindex"
+sign_args=(--force --sign "${MAILBOXD_SIGN_IDENTITY:--}")
+if [[ "${MAILBOXD_SIGN_IDENTITY:--}" != "-" ]]; then sign_args+=(--options runtime); fi
 xcrun swiftc -target "$target" -module-name Mailboxd -O \
   "$root/native/App.swift" "$root/native/Feed.swift" -o "$host/MacOS/mailboxd"
 xcrun swiftc -target "$target" -module-name MailboxdExtension -O -application-extension \
@@ -26,9 +28,9 @@ xcrun swiftc -target "$target" -module-name MailboxdExtension -O -application-ex
   "$root/native/Feed.swift" -o "$extension/MacOS/mailboxd-extension"
 
 xattr -cr "${host%/Contents}"
-codesign --force --sign - --entitlements "$root/native/Extension.entitlements" "${extension%/Contents}"
+codesign "${sign_args[@]}" --entitlements "$root/native/Extension.entitlements" "${extension%/Contents}"
 xattr -cr "${host%/Contents}"
-codesign --force --sign - --entitlements "$root/native/App.entitlements" "${host%/Contents}"
+codesign "${sign_args[@]}" --entitlements "$root/native/App.entitlements" "${host%/Contents}"
 codesign --verify --deep --strict "${host%/Contents}"
 
 if [[ -e "$app" ]]; then mv "$app" "$stage/previous.app"; fi

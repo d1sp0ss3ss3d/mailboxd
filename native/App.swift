@@ -1,5 +1,7 @@
 import AppKit
+import Darwin
 import Foundation
+import ServiceManagement
 
 private struct SyncProblem: LocalizedError {
     let errorDescription: String?
@@ -13,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var syncing = false
     private let status = NSTextField(wrappingLabelWithString: "Ready to sync your Letterboxd emails.")
     private let button = NSButton(title: "Start Syncing", target: nil, action: nil)
+    private let launchAtLogin = NSButton(checkboxWithTitle: "Open at login", target: nil, action: nil)
     private let preference = "automaticMailSync"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -27,8 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.action = #selector(syncNow)
         button.bezelStyle = .rounded
         button.keyEquivalent = "\r"
+        launchAtLogin.target = self
+        launchAtLogin.action = #selector(changeLaunchAtLogin(_:))
+        updateLoginItem()
 
-        let stack = NSStackView(views: [heading, description, button, status])
+        let stack = NSStackView(views: [heading, description, button, launchAtLogin, status])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 14
@@ -44,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             status.widthAnchor.constraint(equalTo: stack.widthAnchor)
         ])
 
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 455, height: 250),
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 455, height: 272),
                           styleMask: [.titled, .closable, .miniaturizable],
                           backing: .buffered, defer: false)
         window.title = "mailboxd"
@@ -63,6 +69,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        updateLoginItem()
+    }
+
+    private func updateLoginItem() {
+        let loginStatus = SMAppService.mainApp.status
+        launchAtLogin.state = loginStatus == .enabled || loginStatus == .requiresApproval ? .on : .off
+        launchAtLogin.title = loginStatus == .requiresApproval ? "Open at login (approval pending)" : "Open at login"
+    }
+
+    @objc private func changeLaunchAtLogin(_ sender: NSButton) {
+        let service = SMAppService.mainApp
+        do {
+            if sender.state == .on {
+                try service.register()
+                if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+            } else {
+                try service.unregister()
+            }
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+        updateLoginItem()
+    }
 
     @objc private func syncNow() {
         guard !syncing else { return }
@@ -129,6 +160,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @main
 enum MailboxdApp {
     @MainActor static func main() {
+        let lockPath = (NSTemporaryDirectory() as NSString).appendingPathComponent("com.mailboxd.local.lock")
+        let descriptor = open(lockPath, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
+        guard descriptor >= 0 else {
+            NSAlert(error: NSError(domain: NSPOSIXErrorDomain, code: Int(errno))).runModal()
+            return
+        }
+        defer { close(descriptor) }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            let failure = errno
+            if failure == EWOULDBLOCK {
+                if let identifier = Bundle.main.bundleIdentifier {
+                    let running = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
+                    running.first { $0.processIdentifier != getpid() }?.activate()
+                }
+            } else {
+                NSAlert(error: NSError(domain: NSPOSIXErrorDomain, code: Int(failure))).runModal()
+            }
+            return
+        }
+
         let application = NSApplication.shared
         let delegate = AppDelegate()
         application.delegate = delegate
