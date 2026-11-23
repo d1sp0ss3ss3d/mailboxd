@@ -1,13 +1,14 @@
 "use strict";
 
 browser.runtime.onMessage.addListener((message, sender, reply) => {
-  if (message?.type !== "mailboxd:list" || sender.frameId !== 0 ||
+  const type = message?.type === "mailboxd:refresh" ? "refresh" : "list";
+  if (message?.type !== `mailboxd:${type}` || sender.frameId !== 0 ||
       !/^https:\/\/letterboxd\.com\/activity(?:[/?#]|$)/.test(sender.url)) {
     return false;
   }
 
   browser.runtime.sendNativeMessage("com.mailboxd.local", {
-    type: "list",
+    type,
     offset: message.offset,
     revision: message.revision
   })

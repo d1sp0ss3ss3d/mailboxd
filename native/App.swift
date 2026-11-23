@@ -2,6 +2,7 @@ import AppKit
 import Darwin
 import Foundation
 import ServiceManagement
+import notify
 
 private struct SyncProblem: LocalizedError {
     let errorDescription: String?
@@ -13,6 +14,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var timer: Timer?
     private var syncing = false
+    private var fetchingMail = false
+    private var refreshQueued = false
+    private var refreshToken: Int32 = 0
+    private var syncState = SyncState.read()
     private let status = NSTextField(wrappingLabelWithString: "Ready to sync your Letterboxd emails.")
     private let button = NSButton(title: "Start Syncing", target: nil, action: nil)
     private let launchAtLogin = NSButton(checkboxWithTitle: "Open at login", target: nil, action: nil)
@@ -22,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let heading = NSTextField(labelWithString: "mailboxd")
         heading.font = .systemFont(ofSize: 28, weight: .semibold)
         let description = NSTextField(wrappingLabelWithString:
-            "Read Letterboxd notifications from Apple Mail in Safari’s Activity → Email tab. Keep mailboxd running to sync every five minutes.")
+            "Read Letterboxd notifications in Safari’s Activity → Email tab. mailboxd checks Apple Mail every 15 seconds while both apps run.")
         description.textColor = .secondaryLabelColor
         status.font = .systemFont(ofSize: 13)
         status.maximumNumberOfLines = 4
@@ -60,7 +65,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
-        if UserDefaults.standard.bool(forKey: preference) { syncNow() }
+        notify_register_dispatch(SyncState.refreshNotification, &refreshToken, .main) { [weak self] _ in
+            Task { @MainActor in self?.refreshFromSafari() }
+        }
+        if UserDefaults.standard.bool(forKey: preference) {
+            button.title = "Sync Now"
+            startSync(fetch: false)
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -69,6 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        notify_cancel(refreshToken)
+    }
 
     func applicationDidBecomeActive(_ notification: Notification) {
         updateLoginItem()
@@ -96,16 +111,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func syncNow() {
-        guard !syncing else { return }
+        UserDefaults.standard.set(true, forKey: preference)
+        startSync(fetch: true)
+    }
+
+    private func refreshFromSafari() {
+        guard UserDefaults.standard.bool(forKey: preference) else {
+            recordResult(error: "Click Start Syncing in the mailboxd app to connect Apple Mail.", fetch: true)
+            return
+        }
+        startSync(fetch: true)
+    }
+
+    private func startSync(fetch: Bool) {
+        if syncing {
+            if fetch && !fetchingMail { refreshQueued = true }
+            return
+        }
+        timer?.invalidate()
+        if !fetch && NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.mail").isEmpty {
+            let message = "Open Apple Mail to receive and sync new messages."
+            status.stringValue = message
+            recordResult(error: message, fetch: false)
+            scheduleSync()
+            return
+        }
         syncing = true
+        fetchingMail = fetch
         button.isEnabled = false
         button.title = "Sync Now"
         status.stringValue = "Checking Apple Mail…"
-        UserDefaults.standard.set(true, forKey: preference)
 
         Task {
             let result = await Task.detached(priority: .utility) {
-                Result { try Self.syncMail() }
+                Result { try Self.syncMail(fetch: fetch) }
             }.value
             syncing = false
             button.isEnabled = true
@@ -113,23 +152,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .success(let feed):
                 let count = feed.items.count
                 status.stringValue = "Synced \(count) Letterboxd \(count == 1 ? "email" : "emails"). " + feed.warning
+                recordResult(error: nil, fetch: fetch)
             case .failure(let error):
                 status.stringValue = error.localizedDescription
+                recordResult(error: error.localizedDescription, fetch: fetch)
             }
-            timer?.invalidate()
-            timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in
-                Task { @MainActor in self?.syncNow() }
+            if refreshQueued {
+                refreshQueued = false
+                startSync(fetch: true)
+            } else {
+                scheduleSync()
             }
         }
     }
 
-    nonisolated private static func syncMail() throws -> Feed {
+    private func recordResult(error: String?, fetch: Bool) {
+        let previous = syncState
+        syncState.error = error
+        if fetch {
+            syncState.refreshID = UUID().uuidString
+            syncState.refreshError = error
+        }
+        guard syncState != previous else { return }
+        do {
+            try syncState.save()
+        } catch {
+            status.stringValue = "Could not save the mailboxd sync status."
+            syncState = previous
+        }
+    }
+
+    private func scheduleSync() {
+        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.startSync(fetch: false) }
+        }
+        timer?.tolerance = 2
+    }
+
+    nonisolated private static func syncMail(fetch: Bool) throws -> Feed {
         guard let script = Bundle.main.url(forResource: "read-mail", withExtension: "js") else {
             throw SyncProblem("The Apple Mail reader is missing. Rebuild mailboxd.")
         }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        process.arguments = ["-l", "JavaScript", script.path]
+        process.arguments = ["-l", "JavaScript", script.path, Feed.storage.path, fetch ? "refresh" : "scan"]
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice

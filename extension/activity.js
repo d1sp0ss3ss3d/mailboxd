@@ -97,6 +97,7 @@
     root.append(subheader, list, footer);
 
     const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+    const syncDateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
     let visible = 0;
     let revision = "";
     let pending = false;
@@ -135,29 +136,48 @@
       visible += items.length;
     }
 
-    async function load(nextPage = false) {
+    async function request(type, offset = 0) {
+      const result = await browser.runtime.sendMessage({ type: `mailboxd:${type}`, offset, revision });
+      if (!result || result.error) throw new Error(result?.error || "Safari could not reach mailboxd.");
+      return result;
+    }
+
+    async function waitForRefresh() {
+      const { refreshID } = await request("refresh");
+      const deadline = Date.now() + 40_000;
+      while (Date.now() < deadline) {
+        const result = await request("list");
+        if (result.refreshID !== refreshID) return result;
+        if (result.running === false) throw new Error(result.syncError);
+        await new Promise(resolve => setTimeout(resolve, 800));
+      }
+      throw new Error("Apple Mail is still checking for messages. This tab will update when the check finishes.");
+    }
+
+    async function load(mode = "list") {
       if (pending) return;
       pending = true;
       refresh.disabled = more.disabled = true;
-      if (!revision) status.textContent = "Reading the local mailboxd feed…";
+      if (mode === "refresh") status.textContent = "Checking Apple Mail…";
+      else if (!revision) status.textContent = "Reading the local mailboxd feed…";
       try {
-        const result = await browser.runtime.sendMessage({
-          type: "mailboxd:list", offset: nextPage ? visible : 0, revision
-        });
-        if (!result || result.error) throw new Error(result?.error || "Open the mailboxd app and start syncing with Apple Mail.");
+        const result = mode === "refresh" ? await waitForRefresh() : await request("list", mode === "more" ? visible : 0);
+        const problem = (mode === "refresh" && result.refreshError) || result.syncError;
+        if (!result.revision) throw new Error(problem || "Open the mailboxd app and click Start Syncing.");
         if (revision !== result.revision) {
           revision = result.revision;
           visible = 0;
           list.replaceChildren();
           appendPage(result.items);
-        } else if (nextPage) {
+        } else if (mode === "more") {
           appendPage(result.items);
         }
         footer.hidden = visible >= result.total;
         const summary = result.total === 0 ? "No Letterboxd emails found." :
           `${result.total.toLocaleString()} ${result.total === 1 ? "email" : "emails"}`;
-        status.textContent = result.warning ? `${summary} · ${result.warning}` :
-          `${summary} · Last synced ${dateFormat.format(new Date(result.syncedAt))}`;
+        status.textContent = [
+          summary, `Last synced ${syncDateFormat.format(new Date(result.syncedAt))}`, problem || result.warning
+        ].filter(Boolean).join(" · ");
       } catch (error) {
         status.textContent = error.message;
       } finally {
@@ -166,8 +186,8 @@
       }
     }
 
-    refresh.addEventListener("click", () => load());
-    more.addEventListener("click", () => load(true));
+    refresh.addEventListener("click", () => load("refresh"));
+    more.addEventListener("click", () => load("more"));
     return { host, load };
   }
 
@@ -241,7 +261,9 @@
   mount();
   new MutationObserver(mount).observe(document.body, { childList: true, subtree: true });
   window.addEventListener("hashchange", update);
-  window.setInterval(() => {
+  function updateVisibleFeed() {
     if (mounted && !mounted.panel.host.hidden && !document.hidden) mounted.panel.load();
-  }, 60_000);
+  }
+  window.setInterval(updateVisibleFeed, 5_000);
+  document.addEventListener("visibilitychange", updateVisibleFeed);
 })();

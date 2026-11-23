@@ -9,7 +9,7 @@ Requires macOS 14 or later, Safari 17 or later, and an account configured in App
 1. Unzip the build and move `mailboxd.app` into **Applications** before opening it. On updates, quit mailboxd and replace the app at the same path. If you already installed it in `~/Applications`, use that location instead.
 2. Open that installed copy once. Click **Start Syncing** and approve access to Apple Mail when macOS prompts. Select **Open at login** if you want syncing to start whenever you sign in to your Mac.
 3. In **Safari → Settings → Extensions**, enable **mailboxd** and grant access to **letterboxd.com**. For an ad hoc build, first turn on **Allow unsigned extensions** in the Developer tab. Safari resets that setting on quit. [Running your Safari web extension](https://developer.apple.com/documentation/safariservices/running-your-safari-web-extension)
-4. Open [Letterboxd Activity](https://letterboxd.com/activity/) while signed in and select **Email**. The companion syncs every five minutes while running. **Sync Now** scans Apple Mail immediately, and the Email tab’s **Refresh** button reads the latest scan.
+4. Open [Letterboxd Activity](https://letterboxd.com/activity/) while signed in and select **Email**. While both apps are running, the companion checks Apple Mail every 15 seconds and the visible tab updates automatically. **Refresh** in Safari and **Sync Now** in the companion ask Apple Mail to get new mail and scan for changes. Deliveries that take longer to download appear on a later scan.
 
 The companion app contains the Safari extension and provides its native connection to the local feed. If Safari lists mailboxd more than once, quit Safari and mailboxd, then remove the extra app copies from locations such as Downloads, Applications, and your build folder. Use the installed copy when you reopen mailboxd. To locate installed plug-ins, run `pluginkit -m -A -D -vv -i com.mailboxd.local.extension`.
 
@@ -27,7 +27,7 @@ The default build is ad hoc signed. For a local developer-signed build, set `MAI
 
 ## Email access
 
-The companion scans the inbox and folders available in Apple Mail across enabled accounts, including local folders. It checks for an exact `letterboxd.com` sender domain, excludes messages marked as junk or deleted, and deduplicates by message ID. Availability depends on the mail that Apple Mail can see. Messages from unfamiliar templates still appear with their original subjects.
+The companion scans the inbox and folders available in Apple Mail across enabled accounts, including local folders. It checks for an exact `letterboxd.com` sender domain, skips Trash and Junk, excludes messages marked as junk or deleted, and deduplicates by message ID. Archiving keeps an email in the feed. Availability depends on the mail that Apple Mail can see. Messages from unfamiliar templates still appear with their original subjects.
 
 The app writes subjects, dates, message IDs, and available comment excerpts and permalinks to `~/Library/Application Support/mailboxd/feed.json`. Safari reads that file locally through its native extension. The extension renders messages as text in a closed shadow root on the Activity page and loads no remote email content. The app uses Apple Mail’s existing login sessions. There is no mailboxd server, account, analytics, or outbound email.
 

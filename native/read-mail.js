@@ -118,18 +118,51 @@ function findCommentURL(source) {
   return htmlAction || plainAction || (candidates.size === 1 ? candidates.values().next().value : null);
 }
 
-function run() {
-  const mail = Application("com.apple.mail");
+function cachedItems(path) {
+  if (!path) return [];
+  try {
+    ObjC.import("Foundation");
+    const text = $.NSString.stringWithContentsOfFileEncodingError(path, $.NSUTF8StringEncoding, null);
+    const items = JSON.parse(ObjC.unwrap(text)).items;
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
+  }
+}
+
+function scanMail(mail, previous, fetch) {
   const items = new Map();
+  const cachedComments = new Map(previous.filter(item => item.kind === "Comment" && item.messageID)
+    .map(item => [item.messageID, item]));
+  const excludedIDs = new Set();
   let skipped = false;
   let scanned = 0;
 
+  function matchingMessages(mailbox) {
+    return mailbox.messages.whose({ sender: { _contains: "@letterboxd.com" } })();
+  }
+
+  function excludeMailbox(mailbox) {
+    try {
+      for (const message of matchingMessages(mailbox)) excludedIDs.add(message.id());
+    } catch (error) {
+      if (error.errorNumber === -1743) throw error;
+      // An account may not have a configured special mailbox.
+    }
+  }
+
   function inspectMailbox(mailbox, includeChildren) {
     try {
-      const messages = mailbox.messages.whose({ sender: { _contains: "@letterboxd.com" } })();
+      if (includeChildren) {
+        // Provider-named folders may be exposed separately from Mail's unified Trash and Junk.
+        const name = mailbox.name().split("/").pop().trim();
+        if (/^(trash|bin|deleted messages|deleted items|deleted mail|junk|junk e-mail|spam)$/i.test(name)) return;
+      }
+      const messages = matchingMessages(mailbox);
       for (const message of messages) {
         try {
-          if (!letterboxd.test(addressOf(message.sender())) || message.deletedStatus() || message.junkMailStatus()) continue;
+          if (!letterboxd.test(addressOf(message.sender())) || excludedIDs.has(message.id()) ||
+              message.deletedStatus() || message.junkMailStatus()) continue;
           const messageID = (message.messageId() || "").replace(/^<|>$/g, "");
           const key = messageID || `mail:${message.id()}`;
           if (items.has(key)) continue;
@@ -140,13 +173,16 @@ function run() {
           let detail = "";
           let commentURL = null;
           if (kind === "Comment") {
+            const cached = cachedComments.get(messageID);
+            detail = cached?.detail || "";
+            commentURL = cached?.commentURL || null;
             try {
-              detail = commentExcerpt(String(message.content() || ""));
+              if (!detail) detail = commentExcerpt(String(message.content() || ""));
             } catch {
               // Keep the entry when the body has not been downloaded.
             }
             try {
-              commentURL = findCommentURL(String(message.source() || ""));
+              if (!commentURL) commentURL = findCommentURL(String(message.source() || ""));
             } catch {
               // A message can be listed before Mail has its full source.
             }
@@ -173,23 +209,34 @@ function run() {
   }
 
   try {
+    if (fetch) {
+      mail.checkForNewMail();
+      // Mail starts fetching asynchronously. Later scans pick up slower deliveries.
+      delay(2);
+    }
     const accounts = mail.accounts();
+    excludeMailbox(mail.trashMailbox);
+    excludeMailbox(mail.junkMailbox);
     inspectMailbox(mail.inbox, false);
     for (const account of accounts) {
       if (!account.enabled()) continue;
       for (const mailbox of account.mailboxes()) inspectMailbox(mailbox, true);
     }
     for (const mailbox of mail.mailboxes()) inspectMailbox(mailbox, true);
-    if (scanned === 0) return JSON.stringify({ error: "Apple Mail did not return an accessible mailbox." });
-    return JSON.stringify({
+    if (scanned === 0) return { error: "Apple Mail did not return an accessible mailbox." };
+    return {
       items: [...items.values()].sort((left, right) => right.receivedAt.localeCompare(left.receivedAt)),
       warning: skipped ? "Some Apple Mail messages or folders could not be read." : ""
-    });
+    };
   } catch (error) {
-    return JSON.stringify({
+    return {
       error: error.errorNumber === -1743
         ? "Allow mailboxd to control Mail in System Settings → Privacy & Security → Automation, then sync again."
         : "Could not read Apple Mail. Open Mail and check that your account is available, then sync again."
-    });
+    };
   }
+}
+
+function run(argv = []) {
+  return JSON.stringify(scanMail(Application("com.apple.mail"), cachedItems(argv[0]), argv[1] === "refresh"));
 }

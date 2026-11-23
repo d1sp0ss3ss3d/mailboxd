@@ -8,11 +8,11 @@ const vm = require("node:vm");
 
 const script = fs.readFileSync(path.join(__dirname, "../native/read-mail.js"), "utf8");
 
-function message({ id, subject, body = "", source = "", sender = "Letterboxd <robot@letterboxd.com>", day = 1, junk = false }) {
+function message({ id, subject, body = "", source = "", sender = "Letterboxd <robot@letterboxd.com>", day = 1, junk = false, deleted = false }) {
   return {
     id: () => id,
     sender: () => sender,
-    deletedStatus: () => false,
+    deletedStatus: () => deleted,
     junkMailStatus: () => junk,
     messageId: () => `<${id}@example.test>`,
     subject: () => subject,
@@ -22,8 +22,9 @@ function message({ id, subject, body = "", source = "", sender = "Letterboxd <ro
   };
 }
 
-function mailbox(messages, children = []) {
+function mailbox(messages, children = [], name = "Folder") {
   return {
+    name: () => name,
     messages: {
       whose(query) {
         assert.equal(query.sender._contains, "@letterboxd.com");
@@ -34,12 +35,9 @@ function mailbox(messages, children = []) {
   };
 }
 
-function scan(mail) {
-  const sandbox = { Application: name => {
-    assert.equal(name, "com.apple.mail");
-    return mail;
-  } };
-  return JSON.parse(vm.runInNewContext(script + "\nrun()", sandbox));
+function scan(mail, { fetch = false, previous = [], wait = () => {} } = {}) {
+  const sandbox = { mail, fetch, previous, delay: wait };
+  return JSON.parse(vm.runInNewContext(script + "\nJSON.stringify(scanMail(mail, previous, fetch))", sandbox));
 }
 
 test("reads inbox and nested folders, recognizes both formats, and keeps other Letterboxd subjects", () => {
@@ -118,10 +116,80 @@ test("preserves results when a folder is unreadable", () => {
   const result = scan({
     inbox: mailbox([]),
     accounts: () => [],
-    mailboxes: () => [{ messages: { whose() { throw Error("unreadable"); } }, mailboxes: () => [] }]
+    mailboxes: () => [{
+      name: () => "Unavailable",
+      messages: { whose() { throw Error("unreadable"); } },
+      mailboxes: () => []
+    }]
   });
   assert.deepEqual(result.items, []);
   assert.match(result.warning, /could not be read/);
+});
+
+test("reconciles additions and deletions while retaining archived notifications", () => {
+  const removed = message({ id: 1, subject: "Moved to Trash" });
+  const incoming = message({ id: 2, subject: "New from Letterboxd", day: 2 });
+  const archived = message({ id: 3, subject: "Archived Letterboxd notification" });
+  const remoteTrash = message({ id: 4, subject: "In provider Trash" });
+  const flaggedDeleted = message({ id: 5, subject: "Marked deleted", deleted: true });
+  const inbox = [removed, flaggedDeleted];
+  const trash = [];
+  const mail = {
+    inbox: mailbox(inbox),
+    trashMailbox: mailbox(trash),
+    accounts: () => [{
+      enabled: () => true,
+      mailboxes: () => [
+        mailbox([archived, ...trash]),
+        mailbox([remoteTrash], [], "[Gmail]/Trash")
+      ]
+    }],
+    mailboxes: () => []
+  };
+  const first = scan(mail);
+  assert.deepEqual(first.items.map(item => item.messageID), ["1@example.test", "3@example.test"]);
+  inbox.splice(0, 1, incoming);
+  trash.push(removed);
+  const second = scan(mail, { previous: first.items });
+  assert.deepEqual(second.items.map(item => item.messageID), ["2@example.test", "3@example.test"]);
+});
+
+test("manual refresh asks Mail to check the server and reads arrivals after the check", () => {
+  const inbox = [];
+  let fetches = 0;
+  const mail = {
+    inbox: mailbox(inbox),
+    accounts: () => [],
+    mailboxes: () => [],
+    checkForNewMail() { fetches += 1; }
+  };
+  assert.deepEqual(scan(mail).items, []);
+  assert.equal(fetches, 0);
+  const refreshed = scan(mail, {
+    fetch: true,
+    wait(seconds) {
+      assert.equal(fetches, 1);
+      assert.ok(seconds > 0);
+      inbox.push(message({ id: 1, subject: "Fetched notification" }));
+    }
+  });
+  assert.equal(refreshed.items[0].subject, "Fetched notification");
+});
+
+test("uses already parsed comment content only for messages still present", () => {
+  const comment = message({ id: 1, subject: "New comment on Letterboxd" });
+  let bodyReads = 0;
+  comment.content = comment.source = () => { bodyReads += 1; };
+  const previous = [{
+    messageID: "1@example.test",
+    kind: "Comment",
+    detail: "Sample comment",
+    commentURL: "https://letterboxd.com/example/film/sample/#comment-92"
+  }];
+  const result = scan({ inbox: mailbox([comment]), accounts: () => [], mailboxes: () => [] }, { previous });
+  assert.equal(result.items[0].detail, previous[0].detail);
+  assert.equal(result.items[0].commentURL, previous[0].commentURL);
+  assert.equal(bodyReads, 0);
 });
 
 test("surfaces missing Automation permission", () => {
