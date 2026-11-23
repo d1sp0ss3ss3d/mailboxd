@@ -45,51 +45,56 @@
     const root = host.attachShadow({ mode: "closed" });
     const stylesheet = new CSSStyleSheet();
     stylesheet.replaceSync(`
-      :host {
-        --mailboxd-divider: rgb(var(--panel-divider-rgb, 44, 52, 64));
-        --mailboxd-metadata: var(--theme-metadata-low-contrast-content-color, #89a);
-        --mailboxd-link: var(--theme-body-link-content-color, #cde);
-        --mailboxd-link-hover: var(--theme-body-link-hover-content-color, #40bcf4);
-        display: block;
-        color: var(--theme-body-content-color, #abc);
-        font: 15px/1.5 system-ui, sans-serif;
+      :host { display: block; }
+      .subheader, ul, footer {
+        color: #abc;
+        font-family: var(--font-stack-graphik, inherit);
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 1.38462;
       }
       * { box-sizing: border-box; }
       [hidden] { display: none !important; }
-      .panel { margin: 18px 0 42px; border: 1px solid var(--mailboxd-divider); border-radius: 12px; background: #1c232a; overflow: hidden; }
-      header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; background: var(--panel-background, #456); }
-      h2 { margin: 0; font-size: 17px; color: var(--panel-content-medium-high-contrast, #bcd); }
-      button, a { color: var(--mailboxd-link); font: inherit; }
-      button { background: var(--panel-background, #456); border: 1px solid #678; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
-      button:hover { background: var(--panel-background-low-contrast, #567); color: #def; }
-      a:hover { color: var(--mailboxd-link-hover); }
       p { margin: 0; overflow-wrap: anywhere; }
-      .status { padding: 12px 18px; color: var(--mailboxd-metadata); }
-      ul { padding: 0; margin: 0; list-style: none; }
-      li { padding: 13px 18px; border-top: 1px solid var(--mailboxd-divider); }
-      .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; color: var(--mailboxd-metadata); font-size: 13px; }
-      .type { color: var(--mailboxd-link); font-weight: 600; }
-      .subject { color: var(--theme-heading-content-color, #fff); font-weight: 600; margin: 3px 0; }
-      .detail { white-space: pre-line; margin: 4px 0 7px; }
-      a { font-size: 13px; }
-      footer { padding: 12px 18px; border-top: 1px solid var(--mailboxd-divider); }
+      .subheader, .summary {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        column-gap: 10px;
+      }
+      .subheader { padding: 7px 10px; color: #9ab; }
+      ul { padding: 0; margin: 0 0 var(--spacing-dense-medium, .375rem); list-style: none; }
+      li { padding: 7px 10px; background: #1c232a; border-top: 1px solid #111; }
+      li:last-child { border-bottom: 1px solid #2c3440; }
+      .brief { flex: 1 1 auto; min-width: 0; color: #789; }
+      .type { color: #89a; font-weight: 700; }
+      .subject { color: #fff; }
+      time { margin-inline-start: auto; color: #567; font-size: 11px; line-height: 1.63636; white-space: nowrap; }
+      blockquote { margin: 8px 0 4px; border-inline-start: 1px solid #456; padding-inline-start: 15px; }
+      blockquote p { line-height: 1.5; white-space: pre-line; }
+      .secondary { color: #bcd; text-decoration: none; }
+      .secondary:is(:hover, :active, :focus-visible) { color: #fff; }
+      button { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+      button:disabled { opacity: .5; cursor: default; }
+      footer { text-align: center; }
+      .more { padding: 9px 15px; border-radius: 3px; background: #283038; color: #9ab; line-height: 1; }
+      .more:is(:hover, :focus-visible) { background: #303840; color: #def; }
     `);
     root.adoptedStyleSheets = [stylesheet];
-    const panel = node("div", "panel");
-    const header = node("header");
-    const refresh = node("button", "", "Refresh");
+    const subheader = node("div", "subheader");
+    const refresh = node("button", "secondary", "Refresh");
     refresh.type = "button";
-    header.append(node("h2", "", "Email notifications"), refresh);
-    const status = node("p", "status");
+    const status = node("p");
     status.setAttribute("role", "status");
+    subheader.append(status, refresh);
     const list = node("ul");
     const footer = node("footer");
-    const more = node("button", "", "Show more");
+    const more = node("button", "more", "Show more");
     more.type = "button";
     footer.hidden = true;
     footer.append(more);
-    panel.append(header, status, list, footer);
-    root.append(panel);
+    root.append(subheader, list, footer);
 
     const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
     let visible = 0;
@@ -103,14 +108,20 @@
         const received = new Date(item.receivedAt);
         const time = node("time", "", dateFormat.format(received));
         time.dateTime = received.toISOString();
-        const meta = node("div", "meta");
-        meta.append(node("span", "type", item.kind), time);
-        row.append(meta, node("p", "subject", item.subject));
-        if (item.detail) row.append(node("p", "detail", item.detail));
+        const brief = node("p", "brief");
+        brief.append(node("strong", "type", item.kind), " · ", node("span", "subject", item.subject));
+        const summary = node("div", "summary");
+        summary.append(brief, time);
+        row.append(summary);
+        if (item.detail) {
+          const quote = node("blockquote");
+          quote.append(node("p", "", item.detail));
+          row.append(quote);
+        }
         const commentURL = /^https:\/\/(?:www\.)?letterboxd\.com\/[^\s\\]+#comment-\d+$/i.test(item.commentURL)
           ? item.commentURL : "";
         if (commentURL || item.messageID) {
-          const open = node("a", "", commentURL ? "View and Reply" : "Open in Mail");
+          const open = node("a", "secondary", commentURL ? "View and Reply" : "Open in Mail");
           open.href = commentURL || "message://%3C" + encodeURIComponent(item.messageID) + "%3E";
           open.rel = "noreferrer";
           open.addEventListener("click", event => {
@@ -163,7 +174,7 @@
   let mounted;
 
   function hiddenSiblings(heading) {
-    const main = heading.closest("main, #content, [role=main]");
+    const main = heading.closest(".col-main") || heading.closest("main, #content, [role=main]");
     const siblings = [];
     for (let part = heading; part && part !== main; part = main ? part.parentElement : null) {
       for (let other = part.nextElementSibling; other; other = other.nextElementSibling) {
