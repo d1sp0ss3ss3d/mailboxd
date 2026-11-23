@@ -45,26 +45,34 @@
     const root = host.attachShadow({ mode: "closed" });
     const stylesheet = new CSSStyleSheet();
     stylesheet.replaceSync(`
-      :host { display: block; color: #dce4eb; font: 15px/1.5 system-ui, sans-serif; }
+      :host {
+        --mailboxd-divider: rgb(var(--panel-divider-rgb, 44, 52, 64));
+        --mailboxd-metadata: var(--theme-metadata-low-contrast-content-color, #89a);
+        --mailboxd-link: var(--theme-body-link-content-color, #cde);
+        --mailboxd-link-hover: var(--theme-body-link-hover-content-color, #40bcf4);
+        display: block;
+        color: var(--theme-body-content-color, #abc);
+        font: 15px/1.5 system-ui, sans-serif;
+      }
       * { box-sizing: border-box; }
       [hidden] { display: none !important; }
-      .panel { margin: 18px 0 42px; border: 1px solid #38424e; border-radius: 12px; background: #161d24; overflow: hidden; }
-      header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; background: #202933; }
-      h2 { margin: 0; font-size: 17px; color: #f4f6f8; }
-      button, a { color: #ffd088; font: inherit; }
-      button { background: #26313d; border: 1px solid #465463; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
-      button:hover { background: #344354; }
-      a:hover { color: #ffe6be; }
+      .panel { margin: 18px 0 42px; border: 1px solid var(--mailboxd-divider); border-radius: 12px; background: #1c232a; overflow: hidden; }
+      header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; background: var(--panel-background, #456); }
+      h2 { margin: 0; font-size: 17px; color: var(--panel-content-medium-high-contrast, #bcd); }
+      button, a { color: var(--mailboxd-link); font: inherit; }
+      button { background: var(--panel-background, #456); border: 1px solid #678; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+      button:hover { background: var(--panel-background-low-contrast, #567); color: #def; }
+      a:hover { color: var(--mailboxd-link-hover); }
       p { margin: 0; overflow-wrap: anywhere; }
-      .status { padding: 12px 18px; color: #aab9c8; }
+      .status { padding: 12px 18px; color: var(--mailboxd-metadata); }
       ul { padding: 0; margin: 0; list-style: none; }
-      li { padding: 13px 18px; border-top: 1px solid #313b47; }
-      .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; color: #aab9c8; font-size: 13px; }
-      .type { color: #ffd088; font-weight: 600; }
-      .subject { color: #f4f6f8; font-weight: 600; margin: 3px 0; }
+      li { padding: 13px 18px; border-top: 1px solid var(--mailboxd-divider); }
+      .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; color: var(--mailboxd-metadata); font-size: 13px; }
+      .type { color: var(--mailboxd-link); font-weight: 600; }
+      .subject { color: var(--theme-heading-content-color, #fff); font-weight: 600; margin: 3px 0; }
       .detail { white-space: pre-line; margin: 4px 0 7px; }
       a { font-size: 13px; }
-      footer { padding: 12px 18px; border-top: 1px solid #313b47; }
+      footer { padding: 12px 18px; border-top: 1px solid var(--mailboxd-divider); }
     `);
     root.adoptedStyleSheets = [stylesheet];
     const panel = node("div", "panel");
@@ -210,7 +218,7 @@
     } else {
       last.after(tab);
     }
-    const heading = row.closest(".section-heading, nav") || row;
+    const heading = row.closest("#content-nav, .section-heading, nav") || row;
     const panel = createPanel();
     heading.after(panel.host);
     mounted = { heading, panel, tab, nativeTabs };
