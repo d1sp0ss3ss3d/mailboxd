@@ -6,6 +6,7 @@ struct NotificationItem: Codable, Equatable {
     let receivedAt: String
     let kind: String
     let detail: String
+    let commentURL: String?
 }
 
 struct MailScan: Decodable {

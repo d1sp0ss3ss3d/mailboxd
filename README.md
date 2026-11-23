@@ -1,6 +1,6 @@
 # mailboxd
 
-mailboxd adds an **Email** tab after **Friends**, **You**, and **Incoming** in your signed-in Letterboxd Activity feed. It brings together Letterboxd emails already in Apple Mail, newest first, with a link to open each original message. It recognizes new followers and comments, shows a comment excerpt when available, and includes other Letterboxd emails by subject.
+mailboxd adds an **Email** tab after **Friends**, **You**, and **Incoming** in your signed-in Letterboxd Activity feed. It brings together Letterboxd emails already in Apple Mail, newest first. Comment notifications show an excerpt and a **View and Reply** link to the original comment when available. Other entries link to their original messages in Apple Mail.
 
 ## Build and use on your Mac
 
@@ -26,7 +26,7 @@ Build or unzip the app into a local folder such as `~/Applications`. Cloud-synce
 
 The companion scans the inbox and folders available in Apple Mail across enabled accounts, including local folders. It checks for an exact `letterboxd.com` sender domain, excludes messages marked as junk or deleted, and deduplicates by message ID. Availability depends on the mail that Apple Mail can see. Messages from unfamiliar templates still appear with their original subjects.
 
-The app writes subjects, dates, message IDs, and available comment excerpts to `~/Library/Application Support/mailboxd/feed.json`. Safari reads that file locally through its native extension. The extension renders messages as text in a closed shadow root on the Activity page and loads no remote email content. The app uses Apple Mail’s existing login sessions. There is no mailboxd server, account, analytics, or outbound email.
+The app writes subjects, dates, message IDs, and available comment excerpts and permalinks to `~/Library/Application Support/mailboxd/feed.json`. Safari reads that file locally through its native extension. The extension renders messages as text in a closed shadow root on the Activity page and loads no remote email content. The app uses Apple Mail’s existing login sessions. There is no mailboxd server, account, analytics, or outbound email.
 
 ## Checks
 

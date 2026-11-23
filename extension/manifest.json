@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "mailboxd",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Read your Letterboxd email notifications from the Activity feed.",
   "browser_specific_settings": {
     "safari": { "strict_min_version": "17.0" }

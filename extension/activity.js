@@ -107,9 +107,11 @@
         meta.append(node("span", "type", item.kind), time);
         row.append(meta, node("p", "subject", item.subject));
         if (item.detail) row.append(node("p", "detail", item.detail));
-        if (item.messageID) {
-          const open = node("a", "", "Open in Mail");
-          open.href = "message://%3C" + encodeURIComponent(item.messageID) + "%3E";
+        const commentURL = /^https:\/\/(?:www\.)?letterboxd\.com\/[^\s\\]+#comment-\d+$/i.test(item.commentURL)
+          ? item.commentURL : "";
+        if (commentURL || item.messageID) {
+          const open = node("a", "", commentURL ? "View and Reply" : "Open in Mail");
+          open.href = commentURL || "message://%3C" + encodeURIComponent(item.messageID) + "%3E";
           open.rel = "noreferrer";
           open.addEventListener("click", event => {
             if (!event.isTrusted) event.preventDefault();
